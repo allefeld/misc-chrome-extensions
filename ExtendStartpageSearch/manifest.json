@@ -1,0 +1,20 @@
+{
+    "manifest_version": 2,
+    "name":         "Extend Startpage Search",
+    "version":      "0.2",
+    "description":  "Add links to other searches to Startpage Search",
+    "icons": {
+        "196": "startpage.png"
+      },
+    "content_scripts": [ {
+        "exclude_globs":    [ ],
+        "include_globs":    [ "*" ],
+        "js":               [ "content.js" ],
+        "matches":          [ "https://www.startpage.com/*/search*" ],
+        "run_at": "document_idle"
+    } ],
+    "web_accessible_resources": [
+      "icons/*"
+    ],
+    "converted_from_user_script": true
+}
