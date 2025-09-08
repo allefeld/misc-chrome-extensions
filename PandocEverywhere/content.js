@@ -10,44 +10,53 @@ fetch("http://localhost:3030/version").then(
   }
 )
 
-// Attach event listener handleKey to all editor elements,
-// in the document itself or within an iframe.
-const host = window.location.hostname;
-if (host.includes("moodle")) {
-  // Moodle
-  console.log("[PE] Detected possible Moodle site.")
-  // Wait for iframe.tox-edit-area__iframe to be created.
-  const mo = new MutationObserver((mutations) => {
-    for (const m of mutations) {
-      for (const node of m.addedNodes) {
-        if (node.matches?.("iframe.tox-edit-area__iframe")) {
-          console.log("[PE] Found iframe.tox-edit-area__iframe.", node);
-          // Wait for iframe document to be loaded.
-          node.addEventListener("load", () => {
-            // Listen for keypresses.
-            node.contentDocument.addEventListener("keydown", handleKey);
-          })
-        }
-      }
-    }
-  })
-  mo.observe(document.body, { childList: true, subtree: true });
+// ––– handle shortcuts –––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
-} else if (host.includes("outlook")) {
-  // Outlook
-  console.log("[PE] Detected possible Outlook site.");
-  // Listen for keypresses.
-  document.addEventListener("keydown", handleKey);
-}
+// Listen to key events in the document or embedded iframe documents.
 
-function handleKey(e) {
-  if (formatShortcut(e) == "ScrollLock") {
-    const editor = e.target.closest('[contenteditable]');
-    if (editor && editor.isContentEditable) {
-      pandocEverywhere(editor)
-    }
+const attached = new WeakSet();
+function attachKeyListener(doc) {
+  if (! doc) return;
+  console.log("[PE] Found document");
+  if (attached.has(doc)) {
+    console.log("[PE] Handler already attached");
+  } else {
+    attached.add(doc);
+    console.log("[PE] Attaching handler");
+    doc.addEventListener("keydown", handleKey, true);
   }
 }
+
+// main document
+attachKeyListener(document);
+
+// static iframes
+for (const iframe of document.querySelectorAll('iframe')) {
+  if (iframe.contentDocument) {
+    attachKeyListener(iframe.contentDocument);
+  }
+  iframe.addEventListener('load', () => {
+    attachKeyListener(iframe.contentDocument);
+  });
+}
+
+// dynamic iframes
+const mo = new MutationObserver((mutations) => {
+  for (const m of mutations) {
+    for (const node of m.addedNodes) {
+      if (node.tagName === 'IFRAME') {
+        const iframe = node;
+        if (iframe.contentDocument) {
+          attachKeyListener(iframe.contentDocument);
+        }
+        iframe.addEventListener('load', () => {
+          attachKeyListener(iframe.contentDocument);
+        });
+      }
+    }
+  }
+});
+mo.observe(document.body, { childList: true, subtree: true });
 
 function handleKey(e) {
   const editor = e.target.closest('[contenteditable]');
@@ -55,47 +64,91 @@ function handleKey(e) {
 
   switch (formatShortcut(e)) {
     case "ScrollLock":
-      pandocEverywhere(editor, "Markdown");
+      // html → markdown → html
+      editPandoc(editor, "markdown");
       break;
     case "Ctrl+ScrollLock":
-      pandocEverywhere(editor, "Tidy HTML");
+      // html → html → html
+      editPandoc(editor, "html");
       break;
     case "Alt+ScrollLock":
-      pandocEverywhere(editor, "Raw HTML");
+      // html
+      editRaw(editor);
       break;
   }
 }
 
-function pandocEverywhere(editor, type) {
-  console.log("[PE] pandocEverywhere " + type);
 
-  const { overlay, textarea } = createUI(type);
-  textarea.disabled = true;
-  textarea.placeholder = "Converting…";
+// ––– overlay editor –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
-  pandoc(editor.innerHTML, "html", "markdown").then((text) => {
-    textarea.value = text;
-    textarea.disabled = false;
-    textarea.placeholder = "";
-    textarea.focus();
-  });
+function editRaw(editor) {
+  console.log("[PE] editRaw");
 
-  textarea.addEventListener('keydown', (e) => {
+  const { host, textarea } = createUI("raw");
+  textarea.value = editor.innerHTML;
+  textarea.focus();
+
+  textarea.addEventListener("keydown", (e) => {
     switch (formatShortcut(e)) {
       case "ScrollLock":
       case "Ctrl+ScrollLock":
       case "Alt+ScrollLock":
-        pandoc(textarea.value, "markdown", "html").then((text) => {
-          editor.innerHTML = text;
-          overlay.remove();
-          editor.focus();
-        });
+        editor.innerHTML = textarea.value;
+        host.remove();
+        editor.focus();
+        break;
+      case "Escape":
+        host.remove();
+        editor.focus();
+        break;
+    }
+  });
+}
+
+function editPandoc(editor, format) {
+  console.log("[PE] editPandoc " + format);
+
+  const { host, textarea } = createUI(format);
+  textarea.disabled = true;
+  textarea.placeholder = "Converting…";
+
+  pandoc(editor.innerHTML, "html", format)
+  .then((text) => {
+    textarea.value = text;
+    textarea.disabled = false;
+    textarea.placeholder = "";
+    textarea.focus();
+  })
+  .catch((error) => {
+    alert("Could not convert. Is pandoc-server running?");
+    host.remove();
+  });
+
+  textarea.addEventListener("keydown", (e) => {
+    switch (formatShortcut(e)) {
+      case "ScrollLock":
+      case "Ctrl+ScrollLock":
+      case "Alt+ScrollLock":
+        const text = textarea.value;
         textarea.value = "";
         textarea.disabled = true;
         textarea.placeholder = "Converting…";
+        pandoc(text, format, "html")
+        .then((text) => {
+          editor.innerHTML = text;
+          host.remove();
+          editor.focus();
+        })
+        .catch((error) => {
+          alert("Could not convert. Is pandoc-server running?");
+          textarea.value = text;
+          textarea.disabled = false;
+          textarea.placeholder = "";
+          textarea.focus();
+        })
         break;
       case "Escape":
-        overlay.remove();
+        host.remove();
         editor.focus();
         break;
     }
@@ -109,7 +162,12 @@ function pandoc(text, from, to) {
       "Content-Type": "application/json",
       "Accept": "text/plain"
     },
-    body: JSON.stringify({ text, from, to })
+    body: JSON.stringify({
+      "text": text,
+      "from": from,
+      "to": to,
+      "html-math-method": "mathjax"
+    })
   }).then((response) => response.text());
 }
 
@@ -126,47 +184,72 @@ function formatShortcut(e) {
   return keys.join("+");
 }
 
-function createUI(text, type) {
+const uiStyle = `
+div {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: #7f7f7f7f;
+  z-index: 10000;
+}
+label {
+  display: block;
+  width: min-content;
+  height: calc(100vh - 48px);
+  margin: 16px auto;
+  padding: 8px 16px;
+  border-radius: 8px;
+  color: black;
+  background-color: #ffffffff;
+  font-size: 32px;
+  font-family: Noto Sans, sans-serif;
+}
+textarea {
+  width: 80ch;
+  height: calc(100% - 58px);
+  resize: none;
+  margin-top: 4px;
+  border-radius: 4px;
+  border: 1px solid darkgray;
+  font-size: 20px;
+  font-family: Consolas, monospace;
+}
+`;
+
+function createUI(format) {
+  // Elements are created in a top-down fashion and modified and appended
+  // immediately, except for the top-most element which is appended last.
+  const host = document.createElement('div');
+  const shadow = host.attachShadow({ mode: "open" });
+  const style = document.createElement('style');
+  style.textContent = uiStyle;
+  shadow.appendChild(style);
   const overlay = document.createElement('div');
-  Object.assign(overlay.style, {
-    'position': 'fixed',
-    'top': '0',
-    'left': '0',
-    'width': '100%',
-    'height': '100%',
-    'background-color': '#7f7f7f7f',
-    'zIndex': '10000'
-  });
+  shadow.appendChild(overlay);
   const label = document.createElement('label');
-  Object.assign(label.style, {
-    'display': 'block',
-    'width': 'min-content',
-    'height': 'calc(100vh - 32px)',
-    'margin': '16px auto',
-    'padding': '8px 16px',
-    'border-radius': '8px',
-    'color': 'black',
-    'background-color': '#ffffffff',
-    'font-size': '32px'
-  });
-  label.textContent = "Pandoc Everywhere – " + type;
-  const textarea = document.createElement('textarea');
-  Object.assign(textarea.style, {
-    'font-size': '20px',
-    'width': '80ch',
-    'height': 'calc(100% - 58px)',
-    'resize': 'none',
-    'margin-top': '4px',
-    'border-radius': '4px',
-    'font-family': 'Consolas, monospace'
-  });
-  label.appendChild(textarea);
+  label.textContent = "Editing " + format;
   overlay.appendChild(label);
-  document.body.appendChild(overlay);
+  const textarea = document.createElement('textarea');
+  textarea.addEventListener("keydown", editorKeys);
+  label.appendChild(textarea);
+  document.body.appendChild(host);
   textarea.focus();
-  return { overlay, textarea };
+  return { host, textarea };
 }
 
-
-
-
+function editorKeys(e) {
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const start = this.selectionStart;
+    const end = this.selectionEnd;
+    const value = this.value;
+    const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+    const cursorPosInLine = start - lineStart;
+    const spacesToAdd = 4 - (cursorPosInLine % 4);
+    const spaces = ' '.repeat(spacesToAdd);
+    this.value = value.substring(0, start) + spaces + value.substring(end);
+    this.selectionStart = this.selectionEnd = start + spacesToAdd;
+  }
+}
