@@ -1,10 +1,15 @@
 (function () {
   'use strict';
 
+  console.log('[ESS] Extend Startpage Search');
+
   // get search term
   let url = new URL(document.location);
   let term = url.searchParams.get('query');
-  console.log('ExtenStartpageSearch: search for ' + term)
+  if (! term) {
+    term = document.getElementById("q").value;
+  }
+  console.log('[ESS] Search for "' + term + '"');
 
   // create linkbox
   let linkbox = document.createElement('div');
@@ -42,7 +47,6 @@
     } else {
       let icon = document.createElement('img');
       icon.src = chrome.runtime.getURL('icons/' + iconFile);
-      console.log(icon.src);
       icon.style = 'width: 24px; height: 24px;'
       icon.alt = text;
       link.append(icon);
@@ -65,9 +69,9 @@
     'Wikipedia DE.svg');
 
   // Perplexity
-  addLink('Perplexity',
-    'https://www.perplexity.ai/?' + new URLSearchParams({q: term}),
-    'Perplexity.svg')
+  addLink('ChatGPT',
+    'https://chatgpt.com/?' + new URLSearchParams({q: term}),
+    'ChatGPT.svg')
 
   // Google
   addLink('Google',
