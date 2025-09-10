@@ -222,7 +222,13 @@ function createUI(format) {
   // Elements are created in a top-down fashion and modified and appended
   // immediately, except for the top-most element which is appended last.
   const host = document.createElement('div');
-  const shadow = host.attachShadow({ mode: "open" });
+  Object.assign(host.style, {
+    display: 'block',
+    width: '1px',
+    height: '1px',
+    overflow: 'visible'
+  });
+  const shadow = host.attachShadow({ mode: "open", delegatesFocus: true });
   const style = document.createElement('style');
   style.textContent = uiStyle;
   shadow.appendChild(style);
@@ -236,6 +242,11 @@ function createUI(format) {
   label.appendChild(textarea);
   document.body.appendChild(host);
   textarea.focus();
+  // focus stolen by modal dialog?
+  if (document.activeElement !== host) {
+    document.activeElement.appendChild(host);
+    textarea.focus();
+  }
   return { host, textarea };
 }
 
