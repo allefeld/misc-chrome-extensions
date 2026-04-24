@@ -17,7 +17,7 @@
   linkbox.style =
       'position: fixed; '
     + 'left: 16px; '
-    + 'top: 116px;'
+    + 'top: 116px; '
     + 'padding: 0px 4px; '
     + 'height: fit-content; '
     + 'background-color: #eee;';
@@ -68,10 +68,10 @@
     'https://de.wikipedia.org/wiki/Special:Search?' + new URLSearchParams({search: term}),
     'Wikipedia DE.svg');
 
-  // Perplexity
-  addLink('ChatGPT',
-    'https://chatgpt.com/?' + new URLSearchParams({q: term}),
-    'ChatGPT.svg')
+  // Claude
+  addLink('Claude',
+    'https://claude.ai/new?' + new URLSearchParams({q: term}),
+    'Claude.svg')
 
   // Google
   addLink('Google',

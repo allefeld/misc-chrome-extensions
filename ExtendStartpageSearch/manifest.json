@@ -1,7 +1,7 @@
 {
     "manifest_version": 2,
     "name":         "Extend Startpage Search",
-    "version":      "0.2",
+    "version":      "0.3",
     "description":  "Add links to other searches to Startpage Search",
     "icons": {
         "196": "startpage.png"
